@@ -2,7 +2,6 @@ use crate::hook;
 use crate::settings::Settings;
 use crate::transform::Transform;
 use std::sync::mpsc;
-use std::time::Duration;
 use tokio::sync::mpsc as tokio_mpsc;
 
 #[derive(Debug, Clone)]
@@ -22,13 +21,12 @@ impl Daemon {
             hook::run_keyboard_hook(&settings, hook_tx);
         });
 
-        loop {
-            if let Ok(event) = hook_rx.try_recv() {
-                if tx.send(event).await.is_err() {
+        tokio::task::spawn_blocking(move || {
+            while let Ok(event) = hook_rx.recv() {
+                if tx.blocking_send(event).is_err() {
                     break;
                 }
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
+        }).await.unwrap();
     }
 }

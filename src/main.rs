@@ -19,7 +19,6 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
 
     let mut settings = Settings::load();
-    info!("Settings loaded from: {}", Settings::config_path().display());
 
     if args.contains(&"--settings".to_string()) || args.contains(&"-s".to_string()) {
         if let Err(e) = tui::run_settings_ui(&mut settings) {
@@ -43,14 +42,11 @@ fn hide_console() {
 async fn run_daemon(settings: Settings) {
     hide_console();
     info!("Starting textfmt daemon...");
-    for hk in &settings.hotkeys {
-        println!("  {}+{} {}", hk.modifiers.join("+"), hk.key, hk.transform.name());
-    }
 
     let (tx, mut rx) = mpsc::channel::<DaemonEvent>(32);
     let settings_clone = settings.clone();
 
-    let daemon_handle = tokio::spawn(async move {
+    tokio::spawn(async move {
         daemon::Daemon::run(&settings_clone, tx).await;
     });
 
@@ -65,7 +61,6 @@ async fn run_daemon(settings: Settings) {
     while let Some(event) = rx.recv().await {
         match event {
             DaemonEvent::Transform(transform) => {
-                info!("Applying transform: {:?}", transform);
                 if let Err(e) = clipboard_manager.transform_selection(
                     |text| transform.apply(text),
                     settings.restore_clipboard,
@@ -75,15 +70,13 @@ async fn run_daemon(settings: Settings) {
                 }
             }
             DaemonEvent::OpenSettings => {
-                info!("Opening settings UI...");
                 let mut s = settings.clone();
-                if let Err(e) = tui::run_settings_ui(&mut s) {
-                    error!("Settings UI error: {}", e);
-                }
+                std::thread::spawn(move || {
+                    if let Err(e) = tui::run_settings_ui(&mut s) {
+                        error!("Settings UI error: {}", e);
+                    }
+                });
             }
         }
     }
-
-    let _ = daemon_handle.await;
-    info!("textfmt daemon stopped");
 }

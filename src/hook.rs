@@ -1,28 +1,29 @@
 use crate::daemon::DaemonEvent;
 use crate::settings::Settings;
+use crate::transform::Transform;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::sync::mpsc;
+use winapi::um::winuser::{CallNextHookEx, HC_ACTION, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP};
+
+struct ParsedHotkey {
+    mods: u32,
+    vk: u32,
+    event: DaemonEvent,
+}
 
 struct HookState {
     ctrl: AtomicBool,
     shift: AtomicBool,
     alt: AtomicBool,
     meta: AtomicBool,
-    settings: Settings,
+    hotkeys: Vec<ParsedHotkey>,
     tx: mpsc::Sender<DaemonEvent>,
 }
 
-static mut HOOK_STATE: Option<HookState> = None;
+static HOOK_STATE: OnceLock<Mutex<Option<HookState>>> = OnceLock::new();
 
-unsafe extern "system" fn hook_callback(
-    code: i32,
-    wparam: usize,
-    lparam: isize,
-) -> isize {
-    use winapi::um::winuser::{
-        CallNextHookEx, HC_ACTION, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP,
-    };
-
+unsafe extern "system" fn hook_callback(code: i32, wparam: usize, lparam: isize) -> isize {
     if code == HC_ACTION {
         let wparam = wparam as u32;
         let is_down = wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN;
@@ -32,39 +33,30 @@ unsafe extern "system" fn hook_callback(
             let kb = unsafe { *(lparam as *const KBDLLHOOKSTRUCT) };
             let vk = kb.vkCode;
 
-            let state_ptr: *const Option<HookState> = &raw const HOOK_STATE;
-            let state = unsafe { &*state_ptr };
-            if let Some(ref state) = state.as_ref() {
-                match vk {
-                    0x11 | 0xA2 | 0xA3 => state.ctrl.store(is_down, Ordering::SeqCst),
-                    0x10 | 0xA0 | 0xA1 => state.shift.store(is_down, Ordering::SeqCst),
-                    0x12 | 0xA4 | 0xA5 => state.alt.store(is_down, Ordering::SeqCst),
-                    0x5B | 0x5C => state.meta.store(is_down, Ordering::SeqCst),
-                    _ if is_down => {
-                        let c = state.ctrl.load(Ordering::SeqCst);
-                        let s = state.shift.load(Ordering::SeqCst);
-                        let a = state.alt.load(Ordering::SeqCst);
-                        let m = state.meta.load(Ordering::SeqCst);
+            if let Some(mutex) = HOOK_STATE.get() {
+                if let Ok(state_guard) = mutex.lock() {
+                    if let Some(state) = state_guard.as_ref() {
+                        match vk {
+                            0x11 | 0xA2 | 0xA3 => state.ctrl.store(is_down, Ordering::Relaxed),
+                            0x10 | 0xA0 | 0xA1 => state.shift.store(is_down, Ordering::Relaxed),
+                            0x12 | 0xA4 | 0xA5 => state.alt.store(is_down, Ordering::Relaxed),
+                            0x5B | 0x5C => state.meta.store(is_down, Ordering::Relaxed),
+                            _ if is_down => {
+                                let c = state.ctrl.load(Ordering::Relaxed);
+                                let s = state.shift.load(Ordering::Relaxed);
+                                let a = state.alt.load(Ordering::Relaxed);
+                                let m = state.meta.load(Ordering::Relaxed);
 
-                        for hk in &state.settings.hotkeys {
-                            if let Some((vk_mods, vk_key)) = parse_vk(&hk.modifiers, &hk.key) {
-                                if mods_match(vk_mods, c, s, a, m) && vk as u32 == vk_key {
-                                    let _ = state.tx.send(DaemonEvent::Transform(hk.transform));
-                                    return 1;
+                                for hk in &state.hotkeys {
+                                    if mods_match(hk.mods, c, s, a, m) && vk as u32 == hk.vk {
+                                        let _ = state.tx.send(hk.event.clone());
+                                        return 1;
+                                    }
                                 }
                             }
-                        }
-
-                        if let Some((vk_mods, vk_key)) =
-                            parse_vk(&state.settings.settings_hotkey.modifiers, &state.settings.settings_hotkey.key)
-                        {
-                            if mods_match(vk_mods, c, s, a, m) && vk as u32 == vk_key {
-                                let _ = state.tx.send(DaemonEvent::OpenSettings);
-                                return 1;
-                            }
+                            _ => {}
                         }
                     }
-                    _ => {}
                 }
             }
         }
@@ -80,40 +72,47 @@ fn mods_match(vk_mods: u32, ctrl: bool, shift: bool, alt: bool, meta: bool) -> b
 }
 
 pub fn run_keyboard_hook(settings: &Settings, tx: mpsc::Sender<DaemonEvent>) {
-    unsafe {
-        HOOK_STATE = Some(HookState {
-            ctrl: AtomicBool::new(false),
-            shift: AtomicBool::new(false),
-            alt: AtomicBool::new(false),
-            meta: AtomicBool::new(false),
-            settings: settings.clone(),
-            tx,
-        });
-
-        use winapi::um::winuser::{
-            GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, MSG, WH_KEYBOARD_LL,
-        };
-
-        let hook = SetWindowsHookExW(
-            WH_KEYBOARD_LL,
-            Some(hook_callback
-                as unsafe extern "system" fn(i32, usize, isize) -> isize),
-            std::ptr::null_mut(),
-            0,
-        );
-
-        if hook.is_null() {
-            eprintln!("SetWindowsHookExW failed");
-            return;
+    let mut parsed_hotkeys = Vec::new();
+    for hk in &settings.hotkeys {
+        if let Some((mods, vk)) = parse_vk(&hk.modifiers, &hk.key) {
+            parsed_hotkeys.push(ParsedHotkey { mods, vk, event: DaemonEvent::Transform(hk.transform) });
         }
-
-        let mut msg = std::mem::zeroed::<MSG>();
-        while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) != 0 {
-        }
-
-        UnhookWindowsHookEx(hook);
-        HOOK_STATE = None;
     }
+    if let Some((mods, vk)) = parse_vk(&settings.settings_hotkey.modifiers, &settings.settings_hotkey.key) {
+        parsed_hotkeys.push(ParsedHotkey { mods, vk, event: DaemonEvent::OpenSettings });
+    }
+
+    let state = HookState {
+        ctrl: AtomicBool::new(false),
+        shift: AtomicBool::new(false),
+        alt: AtomicBool::new(false),
+        meta: AtomicBool::new(false),
+        hotkeys: parsed_hotkeys,
+        tx,
+    };
+
+    let mutex = HOOK_STATE.get_or_init(|| Mutex::new(None));
+    *mutex.lock().unwrap() = Some(state);
+
+    use winapi::um::winuser::{GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, MSG, WH_KEYBOARD_LL};
+
+    let hook = unsafe {
+        SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_callback), std::ptr::null_mut(), 0)
+    };
+
+    if hook.is_null() {
+        eprintln!("SetWindowsHookExW failed");
+        return;
+    }
+
+    let mut msg = unsafe { std::mem::zeroed::<MSG>() };
+    unsafe {
+        while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+        }
+        UnhookWindowsHookEx(hook);
+    }
+    
+    *mutex.lock().unwrap() = None;
 }
 
 fn parse_vk(mod_strings: &[String], key: &str) -> Option<(u32, u32)> {
