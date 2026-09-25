@@ -1,19 +1,34 @@
 # textfmt
 
-**Background text formatter daemon with global hotkeys for Windows.**
+**Background text formatter with global hotkeys for Windows and Hyprland.**
 
 Select text in any application, press a hotkey — the text is transformed in place.
 
 ---
 
-## Installation
+## Build
 
-```powershell
-git clone https://github.com/your-username/textfmt.git
-cd textfmt
+Cargo selects the platform implementation from the build target, so each build
+produces one executable for that OS. A normal build targets the current OS:
+
+```sh
 cargo build --release
-.\target\release\textfmt.exe
 ```
+
+To cross-compile, install the Rust target and use `--target`; for example, from
+Linux to 64-bit Windows:
+
+```sh
+rustup target add x86_64-pc-windows-gnu
+cargo build --release --target x86_64-pc-windows-gnu
+```
+
+Cross-compiling also requires a suitable Windows linker/toolchain. The Windows
+binary is written to `target/x86_64-pc-windows-gnu/release/textfmt.exe`.
+
+On Windows, launch the daemon with `textfmt.exe`. On Arch/Hyprland, install
+`wl-clipboard` and `wtype`, then bind `textfmt --transform <Transform>` as
+described below.
 
 ## Usage
 
@@ -96,8 +111,31 @@ textfmt 2> textfmt.log
 
 ## Requirements
 
-- Windows (uses Win32 API for low-level keyboard hook)
+- Windows, or Linux/Wayland with Hyprland, `wl-clipboard` and `wtype`
 - Rust 2024 edition
+
+### Arch Linux / Hyprland
+
+Install the Wayland helpers and build the program:
+
+```sh
+sudo pacman -S wl-clipboard wtype
+cargo build --release
+```
+
+Copy `target/release/textfmt` to a directory on `PATH`, or install it with
+`cargo install --path .`. Bind transformations in `~/.config/hypr/bindings.lua`:
+
+```lua
+o.bind("CTRL + SHIFT + R", nil, "textfmt --transform ToRussian")
+o.bind("CTRL + SHIFT + E", nil, "textfmt --transform ToEnglish")
+o.bind("CTRL + SHIFT + U", nil, "textfmt --transform ToggleCase")
+```
+
+Reload Hyprland, select text, then use a binding. Linux mode copies the
+selection with `wtype`, transforms it, and pastes the result with `wl-clipboard`.
+The `restore_clipboard` setting controls whether the prior text clipboard is
+restored after pasting. Clipboard formats other than text are not preserved.
 
 ---
 
