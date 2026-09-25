@@ -1,7 +1,7 @@
+use crate::transform::Transform;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use crate::transform::Transform;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HotkeyConfig {
@@ -62,6 +62,13 @@ impl Default for Settings {
 impl Settings {
     pub fn config_path() -> PathBuf {
         let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("txtfrmt");
+        path.push("config.toml");
+        path
+    }
+
+    fn legacy_config_path() -> PathBuf {
+        let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
         path.push("textfmt");
         path.push("config.toml");
         path
@@ -70,12 +77,58 @@ impl Settings {
     pub fn load() -> Self {
         let path = Self::config_path();
         if path.exists() {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(settings) = toml::from_str(&content) {
-                    return settings;
+            return match fs::read_to_string(&path) {
+                Ok(content) => match toml::from_str::<Settings>(&content) {
+                    Ok(settings) => settings,
+                    Err(error) => {
+                        eprintln!(
+                            "Invalid config at {}: {error}; using defaults without overwriting it",
+                            path.display()
+                        );
+                        Settings::default()
+                    }
+                },
+                Err(error) => {
+                    eprintln!(
+                        "Cannot read config at {}: {error}; using defaults",
+                        path.display()
+                    );
+                    Settings::default()
                 }
-            }
+            };
         }
+
+        let legacy_path = Self::legacy_config_path();
+        if legacy_path.exists() {
+            return match fs::read_to_string(&legacy_path) {
+                Ok(content) => match toml::from_str::<Settings>(&content) {
+                    Ok(settings) => {
+                        eprintln!(
+                            "Migrating settings from {} to {}",
+                            legacy_path.display(),
+                            path.display()
+                        );
+                        settings.save();
+                        settings
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "Invalid legacy config at {}: {error}; using defaults without overwriting it",
+                            legacy_path.display()
+                        );
+                        Settings::default()
+                    }
+                },
+                Err(error) => {
+                    eprintln!(
+                        "Cannot read legacy config at {}: {error}; using defaults",
+                        legacy_path.display()
+                    );
+                    Settings::default()
+                }
+            };
+        }
+
         let default = Settings::default();
         default.save();
         default
@@ -84,10 +137,18 @@ impl Settings {
     pub fn save(&self) {
         let path = Self::config_path();
         if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
+            if let Err(error) = fs::create_dir_all(parent) {
+                eprintln!(
+                    "Cannot create config directory {}: {error}",
+                    parent.display()
+                );
+                return;
+            }
         }
         if let Ok(content) = toml::to_string_pretty(self) {
-            let _ = fs::write(path, content);
+            if let Err(error) = fs::write(&path, content) {
+                eprintln!("Cannot write config at {}: {error}", path.display());
+            }
         }
     }
 }

@@ -1,8 +1,9 @@
 use arboard::Clipboard;
-use enigo::{Enigo, Keyboard, Settings as EnigoSettings, Key, Direction};
+use enigo::{Direction, Enigo, Key, Keyboard, Settings as EnigoSettings};
+use log::{info, warn};
 use std::thread;
 use std::time::Duration;
-use log::{info, warn};
+use std::time::SystemTime;
 
 pub struct ClipboardManager {
     clipboard: Clipboard,
@@ -31,24 +32,55 @@ impl ClipboardManager {
         Ok(())
     }
 
-    pub fn copy_selection(&mut self, delay_ms: u64) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn copy_selection(
+        &mut self,
+        delay_ms: u64,
+        previous_clipboard: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         info!("copy_selection: sending Ctrl+C (up to 5 attempts)");
-        for attempt in 1..=5 {
-            let before = self.get_text().unwrap_or_default();
-            self.send_ctrl_c()?;
-            thread::sleep(Duration::from_millis(delay_ms));
+        let marker = format!(
+            "__txtfrmt_probe_{}_{}__",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .as_nanos()
+        );
+        self.clipboard.set_text(marker.clone())?;
+        let copy_result = (|| -> Result<String, Box<dyn std::error::Error>> {
+            for attempt in 1..=5 {
+                self.send_ctrl_c()?;
+                thread::sleep(Duration::from_millis(delay_ms));
 
-            let after = self.get_text().unwrap_or_default();
-            info!("copy_selection: attempt {attempt}: clip='{after}'");
+                let after = self.get_text().unwrap_or_default();
+                info!(
+                    "copy_selection: attempt {attempt}: clipboard has {} bytes",
+                    after.len()
+                );
 
-            if !after.is_empty() && after != before {
-                info!("Copied text: '{}'", after);
-                return Ok(after);
+                if !after.is_empty() && after != marker {
+                    info!("Copied selected text ({} bytes)", after.len());
+                    return Ok(after);
+                }
+            }
+            let last = self.get_text().unwrap_or_default();
+            warn!(
+                "Nothing selected after 5 attempts (clipboard has {} bytes)",
+                last.len()
+            );
+            Ok(String::new())
+        })();
+
+        match copy_result {
+            Ok(selected) if !selected.is_empty() => Ok(selected),
+            Ok(_) => {
+                self.clipboard.set_text(previous_clipboard)?;
+                Ok(String::new())
+            }
+            Err(error) => {
+                self.clipboard.set_text(previous_clipboard)?;
+                Err(error)
             }
         }
-        let last = self.get_text().unwrap_or_default();
-        warn!("Nothing selected after 5 attempts (last clip='{last}')");
-        Ok(String::new())
     }
 
     fn paste_key(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -60,8 +92,12 @@ impl ClipboardManager {
         Ok(())
     }
 
-    pub fn paste_text(&mut self, text: &str, delay_ms: u64) -> Result<(), Box<dyn std::error::Error>> {
-        info!("paste_text: setting clipboard to '{}'", text);
+    pub fn paste_text(
+        &mut self,
+        text: &str,
+        delay_ms: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!("paste_text: setting clipboard ({} bytes)", text.len());
         self.clipboard.set_text(text)?;
         thread::sleep(Duration::from_millis(delay_ms / 2));
 
@@ -79,30 +115,42 @@ impl ClipboardManager {
         delay_ms: u64,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let old_clipboard = self.clipboard.get_text().unwrap_or_default();
-        info!("transform_selection: starting, old_clipboard='{}'", old_clipboard);
+        info!(
+            "transform_selection: starting, clipboard has {} bytes",
+            old_clipboard.len()
+        );
 
-        let selected = self.copy_selection(delay_ms)?;
+        let selected = self.copy_selection(delay_ms, &old_clipboard)?;
         if selected.is_empty() {
             warn!("No text selected");
             return Ok(());
         }
 
-        info!("transform_selection: applying transform to '{}'", selected);
+        info!(
+            "transform_selection: applying transform to {} selected bytes",
+            selected.len()
+        );
         let transformed = transform(&selected);
-        info!("transform_selection: transformed='{}'", transformed);
+        info!(
+            "transform_selection: result has {} bytes",
+            transformed.len()
+        );
 
         if transformed == selected {
             warn!("No change after transform");
+            if restore {
+                let _ = self.clipboard.set_text(&old_clipboard);
+            }
             return Ok(());
         }
 
-        self.paste_text(&transformed, delay_ms)?;
-
+        let paste_result = self.paste_text(&transformed, delay_ms);
         if restore {
             thread::sleep(Duration::from_millis(delay_ms));
-            info!("transform_selection: restoring clipboard to '{}'", old_clipboard);
+            info!("transform_selection: restoring previous clipboard");
             let _ = self.clipboard.set_text(&old_clipboard);
         }
+        paste_result?;
 
         info!("transform_selection: done");
         Ok(())

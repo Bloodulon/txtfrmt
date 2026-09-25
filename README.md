@@ -1,4 +1,4 @@
-# textfmt
+# txtfrmt
 
 **Background text formatter with global hotkeys for Windows and Hyprland.**
 
@@ -24,10 +24,10 @@ cargo build --release --target x86_64-pc-windows-gnu
 ```
 
 Cross-compiling also requires a suitable Windows linker/toolchain. The Windows
-binary is written to `target/x86_64-pc-windows-gnu/release/textfmt.exe`.
+binary is written to `target/x86_64-pc-windows-gnu/release/txtfrmt.exe`.
 
-On Windows, launch the daemon with `textfmt.exe`. On Arch/Hyprland, install
-`wl-clipboard` and `wtype`, then bind `textfmt --transform <Transform>` as
+On Windows, launch the daemon with `txtfrmt.exe`. On Arch/Hyprland, install
+`wl-clipboard` and `wtype`, then bind `txtfrmt --transform <Transform>` as
 described below.
 
 ## Usage
@@ -35,13 +35,13 @@ described below.
 Run the daemon — it sits in the system tray (console auto-hides):
 
 ```powershell
-textfmt
+txtfrmt
 ```
 
 Open the settings TUI (text-based user interface):
 
 ```powershell
-textfmt --settings
+txtfrmt --settings
 ```
 
 ### Default Hotkeys
@@ -74,7 +74,7 @@ textfmt --settings
 The config file is created automatically at:
 
 ```
-%APPDATA%\textfmt\config.toml
+%APPDATA%\txtfrmt\config.toml
 ```
 
 Example:
@@ -104,7 +104,7 @@ transform = "ToggleLayout"
 Stderr logs use `env_logger`. To capture:
 
 ```powershell
-textfmt 2> textfmt.log
+txtfrmt 2> txtfrmt.log
 ```
 
 ---
@@ -123,13 +123,13 @@ sudo pacman -S wl-clipboard wtype
 cargo build --release
 ```
 
-Copy `target/release/textfmt` to a directory on `PATH`, or install it with
+Copy `target/release/txtfrmt` to a directory on `PATH`, or install it with
 `cargo install --path .`. Bind transformations in `~/.config/hypr/bindings.lua`:
 
 ```lua
-o.bind("CTRL + SHIFT + R", nil, "textfmt --transform ToRussian")
-o.bind("CTRL + SHIFT + E", nil, "textfmt --transform ToEnglish")
-o.bind("CTRL + SHIFT + U", nil, "textfmt --transform ToggleCase")
+o.bind("CTRL + SHIFT + R", nil, "txtfrmt --transform ToRussian")
+o.bind("CTRL + SHIFT + E", nil, "txtfrmt --transform ToEnglish")
+o.bind("CTRL + SHIFT + U", nil, "txtfrmt --transform ToggleCase")
 ```
 
 Reload Hyprland, select text, then use a binding. Linux mode copies the
@@ -154,13 +154,13 @@ MIT
 ### Использование
 
 ```powershell
-textfmt
+txtfrmt
 ```
 
 Настройки (текстовый интерфейс):
 
 ```powershell
-textfmt --settings
+txtfrmt --settings
 ```
 
 ### Горячие клавиши по умолчанию
@@ -193,7 +193,7 @@ textfmt --settings
 Файл создаётся автоматически:
 
 ```
-%APPDATA%\textfmt\config.toml
+%APPDATA%\txtfrmt\config.toml
 ```
 
 Пример:
@@ -212,7 +212,7 @@ transform = "ToEnglish"
 Логи пишутся в stderr через `env_logger`. Сохранить в файл:
 
 ```powershell
-textfmt 2> textfmt.log
+txtfrmt 2> txtfrmt.log
 ```
 
 ### Требования

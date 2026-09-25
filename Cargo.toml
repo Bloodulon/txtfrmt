@@ -1,5 +1,5 @@
 [package]
-name = "textfmt"
+name = "txtfrmt"
 version = "0.1.0"
 edition = "2024"
 description = "Background text formatter daemon with global hotkeys"
@@ -7,7 +7,7 @@ authors = ["bloodulon@proton.me"]
 license = "MIT"
 
 [[bin]]
-name = "textfmt"
+name = "txtfrmt"
 path = "src/main.rs"
 
 [dependencies]

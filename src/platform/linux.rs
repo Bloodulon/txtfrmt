@@ -94,9 +94,9 @@ pub fn transform_selection(
     let selected = match copy() {
         Ok(text) => text,
         Err(error) => {
-            if restore {
-                let _ = set_clipboard(&old_clipboard);
-            }
+            // The copy path clears the clipboard; recover it even when
+            // restore_clipboard is disabled because no transform happened.
+            let _ = set_clipboard(&old_clipboard);
             return Err(error);
         }
     };

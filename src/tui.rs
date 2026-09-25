@@ -79,7 +79,7 @@ fn draw(frame: &mut Frame, settings: &Settings, selected: usize, transforms: &[T
         ])
         .split(area);
 
-    let title = Paragraph::new("textfmt — Settings")
+    let title = Paragraph::new("txtfrmt — Settings")
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
     frame.render_widget(title, chunks[0]);

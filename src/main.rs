@@ -47,7 +47,7 @@ async fn main() {
                     settings.clipboard_delay_ms,
                     settings.restore_clipboard,
                 ) {
-                    eprintln!("textfmt: {e}");
+                    eprintln!("txtfrmt: {e}");
                     std::process::exit(1);
                 }
             }
@@ -58,7 +58,7 @@ async fn main() {
         }
     } else {
         eprintln!(
-            "Usage: textfmt --transform <ToRussian|ToEnglish|ToggleLayout|ToggleCase|ToUpper|ToLower|TitleCase|CleanWhitespace|Reverse|ToCamelCase|ToSnakeCase>\n       textfmt --settings"
+            "Usage: txtfrmt --transform <ToRussian|ToEnglish|ToggleLayout|ToggleCase|ToUpper|ToLower|TitleCase|CleanWhitespace|Reverse|ToCamelCase|ToSnakeCase>\n       txtfrmt --settings"
         );
         std::process::exit(2);
     }

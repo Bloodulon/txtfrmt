@@ -19,7 +19,7 @@ fn hide_console() {
 
 pub async fn run_daemon(settings: Settings) {
     hide_console();
-    info!("Starting textfmt daemon...");
+    info!("Starting txtfrmt daemon...");
     for hk in &settings.hotkeys {
         println!(
             "  {}+{} {}",
@@ -67,5 +67,5 @@ pub async fn run_daemon(settings: Settings) {
     }
 
     let _ = daemon_handle.await;
-    info!("textfmt daemon stopped");
+    info!("txtfrmt daemon stopped");
 }
